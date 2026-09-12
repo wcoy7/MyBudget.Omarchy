@@ -32,6 +32,12 @@ Panel {
     readonly property string barLabel: Ledger.formatCents(Ledger.monthExpenseCents(state, year, month))
     readonly property string dataDir: (Quickshell.env("HOME") || "") + "/.local/share/expenses"
     readonly property string dataPath: dataDir + "/ledger.json"
+    readonly property string backupPath: dataPath + ".bak"
+
+    // When true, we are showing an empty ledger because the on-disk file was
+    // missing/corrupt. Never overwrite disk with that empty seed.
+    property bool blockEmptyPersist: false
+    property bool loadingBackup: false
 
     function open() {
         root.controller.show()
@@ -55,18 +61,57 @@ Panel {
         return false
     }
 
+    function acceptLoadedState(next, message) {
+        state = next
+        keywordText = (next.settings.payrollKeywords || []).join(", ")
+        blockEmptyPersist = false
+        if (message)
+            status = message
+    }
+
+    function seedEmptyInMemory(message) {
+        state = Ledger.empty()
+        keywordText = (state.settings.payrollKeywords || []).join(", ")
+        blockEmptyPersist = true
+        status = message
+    }
+
+    function backupLedgerFile() {
+        // Copy existing ledger aside before replacing it. No-op if missing.
+        Quickshell.execDetached([
+            "bash", "-lc",
+            'src="$1"; bak="$2"; mkdir -p "$(dirname "$src")"; if [ -f "$src" ] && [ -s "$src" ]; then cp -f "$src" "$bak"; fi',
+            "_", dataPath, backupPath
+        ])
+    }
+
     function persist() {
+        if (blockEmptyPersist && Ledger.isEffectivelyEmpty(state)) {
+            status = "Not saving empty ledger over a missing/damaged file. Add an entry first."
+            return false
+        }
         Quickshell.execDetached(["mkdir", "-p", dataDir])
+        backupLedgerFile()
         ledgerFile.setText(Ledger.dump(state))
+        blockEmptyPersist = false
+        return true
     }
 
     function reloadFromDisk() {
+        loadingBackup = false
         ledgerFile.reload()
+    }
+
+    function tryLoadBackup(reason) {
+        loadingBackup = true
+        status = reason + " Trying backup…"
+        backupFile.reload()
     }
 
     function applyState(next, message) {
         state = next
-        persist()
+        if (!persist())
+            return
         if (message)
             status = message
     }
@@ -78,14 +123,46 @@ Panel {
         atomicWrites: true
         printErrors: false
         onLoaded: {
-            root.state = Ledger.load(text())
-            root.keywordText = (root.state.settings.payrollKeywords || []).join(", ")
+            var result = Ledger.loadStrict(text())
+            if (!result.ok) {
+                // Corrupt JSON must never be overwritten with an empty seed.
+                root.tryLoadBackup(result.error + ".")
+                return
+            }
+            root.acceptLoadedState(result.state, "")
         }
         onLoadFailed: {
-            root.state = Ledger.empty()
-            root.persist()
+            // Missing file: empty in memory only. Do not create/overwrite on disk.
+            root.tryLoadBackup("No ledger file.")
         }
-        onFileChanged: reload()
+        onFileChanged: {
+            if (!root.loadingBackup)
+                reload()
+        }
+    }
+
+    FileView {
+        id: backupFile
+        path: root.backupPath
+        watchChanges: false
+        atomicWrites: true
+        printErrors: false
+        onLoaded: {
+            root.loadingBackup = false
+            var result = Ledger.loadStrict(text())
+            if (result.ok && !Ledger.isEffectivelyEmpty(result.state)) {
+                root.acceptLoadedState(result.state, "Restored from ledger.json.bak")
+                // Rewrite primary from the good backup without clobbering .bak first.
+                Quickshell.execDetached(["mkdir", "-p", root.dataDir])
+                ledgerFile.setText(Ledger.dump(root.state))
+                return
+            }
+            root.seedEmptyInMemory("Ledger missing/damaged and backup unavailable. Showing empty until you save an entry.")
+        }
+        onLoadFailed: {
+            root.loadingBackup = false
+            root.seedEmptyInMemory("Ledger missing/damaged and no backup found. Showing empty until you save an entry.")
+        }
     }
 
     KeyboardPanel {

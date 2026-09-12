@@ -45,9 +45,12 @@ The plugin directory name must match the id: `mybudget.expenses`.
 - Summon: `omarchy-shell shell summon mybudget.expenses '{}'`
 - Hide: `omarchy-shell shell hide mybudget.expenses`
 
-Ledger file (created on first open):
+Ledger files:
 
-`~/.local/share/expenses/ledger.json`
+- `~/.local/share/expenses/ledger.json` — live ledger (created on first successful save)
+- `~/.local/share/expenses/ledger.json.bak` — previous copy, written before each save
+
+If the live file is missing or corrupt, the plugin tries the `.bak` restore. It will not overwrite a damaged ledger with an empty file.
 
 QFX import: on the Import page, enter a path on the Omarchy machine (for example `~/Downloads/export.qfx`). A sample file ships as `fixtures/synthetic.qfx`.
 
