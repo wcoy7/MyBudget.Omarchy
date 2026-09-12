@@ -1,12 +1,75 @@
 # MyExpenses
 
-Standalone personal expense tracker for **Omarchy**, developed in:
-
-`/Users/warren/Documents/Projects/MyBudget`
-
-Local-only: register, paychecks, categories, budgets, and QFX import from the Omarchy bar. Own Omarchy shell plugin — not tied to any other app.
+Standalone personal expense tracker for [Omarchy](https://omarchy.org). Local-only register, paychecks, categories, budgets, and QFX import from the Omarchy bar.
 
 Plugin id: `mybudget.expenses`
+
+## Install
+
+On an Omarchy machine (`aarch64` or `x86_64`). This is a QML shell plugin — nothing to compile.
+
+### From GitHub
+
+```bash
+omarchy plugin add https://github.com/wcoy7/MyBudget.Omarchy.git --enable
+omarchy bar put mybudget.expenses --section right
+```
+
+### From a local checkout
+
+```bash
+git clone https://github.com/wcoy7/MyBudget.Omarchy.git
+omarchy plugin add ./MyBudget.Omarchy --enable
+omarchy bar put mybudget.expenses --section right
+```
+
+### Manual copy
+
+```bash
+git clone https://github.com/wcoy7/MyBudget.Omarchy.git
+mkdir -p ~/.config/omarchy/plugins
+cp -R MyBudget.Omarchy ~/.config/omarchy/plugins/mybudget.expenses
+
+omarchy plugin validate ~/.config/omarchy/plugins/mybudget.expenses
+omarchy-shell shell rescanPlugins
+omarchy plugin enable mybudget.expenses
+omarchy bar put mybudget.expenses --section right
+```
+
+The plugin directory name must match the id: `mybudget.expenses`.
+
+## Use
+
+- Click **MyExpenses** on the bar to open the panel
+- Press Escape to close
+- Summon: `omarchy-shell shell summon mybudget.expenses '{}'`
+- Hide: `omarchy-shell shell hide mybudget.expenses`
+
+Ledger file (created on first open):
+
+`~/.local/share/expenses/ledger.json`
+
+QFX import: on the Import page, enter a path on the Omarchy machine (for example `~/Downloads/export.qfx`). A sample file ships as `fixtures/synthetic.qfx`.
+
+## Update
+
+```bash
+omarchy plugin update mybudget.expenses
+```
+
+Or, in a git checkout under `~/.config/omarchy/plugins/mybudget.expenses`:
+
+```bash
+git pull
+omarchy-shell shell rescanPlugins
+```
+
+## Remove
+
+```bash
+omarchy plugin disable mybudget.expenses
+omarchy plugin remove mybudget.expenses
+```
 
 ## Features
 
@@ -14,48 +77,8 @@ Plugin id: `mybudget.expenses`
 - Checkbook-style register
 - Add expenses and income
 - Category budgets
-- QFX / OFX file import
-- Data stored on disk as JSON (no cloud, no account)
-
-## Install on Omarchy (ARM or x86)
-
-This plugin is QML — no compile step. Works on `aarch64` and `x86_64`.
-
-Copy this project into the plugins directory (folder name must match the plugin id):
-
-```bash
-rsync -av --exclude .git \
-  /Users/warren/Documents/Projects/MyBudget/ \
-  USER@OMARCHY_HOST:~/.config/omarchy/plugins/mybudget.expenses/
-```
-
-On the Omarchy machine:
-
-```bash
-omarchy plugin validate ~/.config/omarchy/plugins/mybudget.expenses
-omarchy-shell shell rescanPlugins
-omarchy plugin enable mybudget.expenses
-omarchy bar put mybudget.expenses --section right
-```
-
-Or, from a checkout already on the Omarchy machine:
-
-```bash
-omarchy plugin add /Users/warren/Documents/Projects/MyBudget --enable
-```
-
-## Use
-
-- Click **MyExpenses** on the bar to open the panel
-- Escape closes it
-- Summon from a terminal: `omarchy-shell shell summon mybudget.expenses '{}'`
-- Hide: `omarchy-shell shell hide mybudget.expenses`
-
-Ledger file (created on first open):
-
-`~/.local/share/expenses/ledger.json`
-
-For QFX import, use a path on the Omarchy machine (for example `~/Downloads/export.qfx`). A sample file is in `fixtures/synthetic.qfx`.
+- QFX / OFX import
+- Local JSON storage (no cloud, no account)
 
 ## Layout
 
@@ -73,6 +96,7 @@ fixtures/         Sample import file
 ```bash
 uname -m
 omarchy plugin list
+omarchy plugin validate ~/.config/omarchy/plugins/mybudget.expenses
 qs log -p "$OMARCHY_PATH/shell" --tail 80
 ```
 
