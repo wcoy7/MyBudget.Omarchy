@@ -32,6 +32,8 @@ cp -R MyBudget.Omarchy ~/.config/omarchy/plugins/mybudget.expenses
 
 omarchy plugin validate ~/.config/omarchy/plugins/mybudget.expenses
 omarchy-shell shell rescanPlugins
+# fully restart if the panel still fails to open:
+# omarchy-shell shell restart
 omarchy plugin enable mybudget.expenses
 omarchy bar put mybudget.expenses --section right
 ```

@@ -11,6 +11,8 @@ Panel {
     moduleName: "mybudget.expenses"
     manageIpc: false
 
+    Component.onCompleted: console.warn("MyExpenses 0.1.3 panel ready")
+
     property var anchorItem: null
     property var hostWidget: null
     property var state: Ledger.empty()
@@ -250,6 +252,13 @@ Panel {
                                 onClicked: root.page = modelData.id
                             }
                         }
+                    }
+
+                    Text {
+                        text: "MyExpenses v0.1.3"
+                        color: root.barForeground
+                        opacity: 0.55
+                        font.pixelSize: Style.font.bodySmall
                     }
 
                     Row {

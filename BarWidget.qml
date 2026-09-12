@@ -91,7 +91,7 @@ BarWidget {
         text: root.spendLabel
         tooltipText: root.loadError !== ""
             ? ("MyExpenses error: " + root.loadError)
-            : "Open MyExpenses 0.1.2"
+            : "Open MyExpenses 0.1.3"
         onPressed: function (buttonCode) {
             if (buttonCode === Qt.LeftButton)
                 root.toggle()
