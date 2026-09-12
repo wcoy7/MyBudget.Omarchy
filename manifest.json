@@ -3,7 +3,7 @@
   "id": "mybudget.expenses",
   "name": "MyExpenses",
   "version": "0.1.3",
-  "author": "MyExpenses",
+  "author": "Warren Coykendall",
   "license": "MIT",
   "description": "Standalone local expense tracker for Omarchy: register, paychecks, budgets, and QFX import.",
   "kinds": [
