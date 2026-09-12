@@ -6,13 +6,23 @@ BarWidget {
     id: root
     moduleName: "mybudget.expenses"
 
+    property string loadError: ""
+
     readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
     readonly property bool popoutSwitchClosing: panelLoader.item ? panelLoader.item.popoutSwitchClosing === true : false
-    readonly property string spendLabel: panelLoader.item ? panelLoader.item.barLabel : "MyExpenses"
+    readonly property string spendLabel: {
+        if (loadError)
+            return "MyExpenses!"
+        if (panelLoader.item)
+            return panelLoader.item.barLabel
+        return "MyExpenses"
+    }
 
     function open() {
         if (panelLoader.item)
             panelLoader.item.open()
+        else if (loadError)
+            console.log("MyExpenses panel failed to load:", loadError)
     }
 
     function close() {
@@ -23,6 +33,8 @@ BarWidget {
     function toggle() {
         if (panelLoader.item)
             panelLoader.item.toggle()
+        else if (loadError)
+            console.log("MyExpenses panel failed to load:", loadError)
     }
 
     function closeForPopoutSwitch() {
@@ -49,8 +61,15 @@ BarWidget {
         source: Qt.resolvedUrl("Panel.qml")
         visible: false
         onLoaded: {
+            root.loadError = ""
             root.injectPanel()
             Qt.callLater(root.injectPanel)
+        }
+        onStatusChanged: {
+            if (status === Loader.Error)
+                root.loadError = (sourceComponent && sourceComponent.errorString) ? sourceComponent.errorString() : "Panel.qml failed to load"
+            else if (status === Loader.Ready)
+                root.loadError = ""
         }
     }
 
@@ -59,7 +78,7 @@ BarWidget {
         anchors.fill: parent
         bar: root.bar
         text: root.spendLabel
-        tooltipText: "Open MyExpenses"
+        tooltipText: root.loadError ? ("MyExpenses error: " + root.loadError) : "Open MyExpenses"
         onPressed: function (buttonCode) {
             if (buttonCode === Qt.LeftButton)
                 root.toggle()

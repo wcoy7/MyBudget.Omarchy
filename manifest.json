@@ -2,11 +2,13 @@
   "schemaVersion": 1,
   "id": "mybudget.expenses",
   "name": "MyExpenses",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": "MyExpenses",
   "license": "MIT",
   "description": "Standalone local expense tracker for Omarchy: register, paychecks, budgets, and QFX import.",
-  "kinds": ["bar-widget"],
+  "kinds": [
+    "bar-widget"
+  ],
   "entryPoints": {
     "barWidget": "BarWidget.qml"
   },

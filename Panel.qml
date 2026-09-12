@@ -1,5 +1,4 @@
 import QtQuick
-import QtQuick.Controls
 import Quickshell
 import Quickshell.Io
 import qs.Commons
@@ -215,7 +214,7 @@ Panel {
                         text: root.status
                         color: root.barForeground
                         opacity: 0.7
-                        font.pixelSize: Style.font.small
+                        font.pixelSize: Style.font.bodySmall
                         anchors.verticalCenter: parent.verticalCenter
                     }
                 }
@@ -233,7 +232,7 @@ Panel {
                         ]
                         Button {
                             text: modelData.label
-                            highlighted: root.page === modelData.id
+                            selected: root.page === modelData.id
                             onClicked: root.page = modelData.id
                         }
                     }
@@ -355,12 +354,15 @@ Panel {
             TextField { placeholderText: "Date YYYY-MM-DD"; text: root.formDate; onTextChanged: root.formDate = text }
             Row {
                 spacing: Style.space(8)
-                Button { text: "Expense"; highlighted: root.formKind === "expense"; onClicked: root.formKind = "expense" }
-                Button { text: "Income"; highlighted: root.formKind === "income"; onClicked: root.formKind = "income" }
+                Button { text: "Expense"; selected: root.formKind === "expense"; onClicked: root.formKind = "expense" }
+                Button { text: "Income"; selected: root.formKind === "income"; onClicked: root.formKind = "income" }
             }
-            ComboBox {
-                model: root.state.categories.map(function (c) { return c.name })
-                onActivated: function (index) { root.formCategory = root.state.categories[index].id }
+            Dropdown {
+                width: parent.width
+                label: "Category"
+                value: root.formCategory
+                options: root.state.categories.map(function (c) { return { value: c.id, label: c.name } })
+                onChanged: function (value) { root.formCategory = value }
             }
             TextField { placeholderText: "Note"; text: root.formNote; onTextChanged: root.formNote = text }
             Button {

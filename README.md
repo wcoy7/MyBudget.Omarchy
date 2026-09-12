@@ -94,6 +94,16 @@ Qfx.js            QFX/OFX parser
 fixtures/         Sample import file
 ```
 
+
+If the bar label appears but clicking only shows a tiny menu/tooltip and no panel:
+
+```bash
+omarchy-shell shell summon mybudget.expenses '{}'
+qs log -p "$OMARCHY_PATH/shell" --tail 80
+```
+
+A failed `Panel.qml` load leaves the bar button alive but with nothing to open. Update the plugin, then `omarchy-shell shell rescanPlugins`.
+
 ## Troubleshooting
 
 ```bash
