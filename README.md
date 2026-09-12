@@ -6,8 +6,6 @@ Plugin id: `mybudget.expenses`
 
 ## Install
 
-On an Omarchy machine (`aarch64` or `x86_64`). This is a QML shell plugin — nothing to compile.
-
 ### From GitHub
 
 ```bash
