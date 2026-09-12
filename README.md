@@ -69,7 +69,9 @@ Ledger files:
 
 If the live file is missing or corrupt, the plugin tries the `.bak` restore. It will not overwrite a damaged ledger with an empty file.
 
-QFX import: on the Import page, enter a path on the Omarchy machine (for example `~/Downloads/export.qfx`). A sample file ships as `fixtures/synthetic.qfx`.
+Reads and writes go through `ledger_io.py`: a bounded, no-follow, owner-checked helper that uses exclusive same-directory temporaries and only replaces the live ledger after the backup finishes. The helper runs as `/usr/bin/python3 -I` with a cleared environment.
+
+QFX import: on the Import page, enter a path on the Omarchy machine (for example `~/Downloads/export.qfx`). Import is limited to `~/Downloads`, `~/Documents`, or the plugin fixtures folder. A sample file ships as `fixtures/synthetic.qfx`.
 
 ## Update
 
@@ -116,6 +118,8 @@ Overlay.qml                Fullscreen overlay chrome
 ExpensesApp.qml            Shared ledger UI
 Ledger.js                  Totals and persistence helpers
 Qfx.js                     QFX/OFX parser
+ledger_io.py               Bounded no-follow ledger/QFX helper
+tests/                     Helper regression tests
 mybudget-expenses.desktop  Walker / app menu launcher
 fixtures/                  Sample import file
 ```
@@ -128,6 +132,12 @@ qs log -p "$OMARCHY_PATH/shell" --tail 80
 ```
 
 Look for `MyExpenses 0.1.4 panel ready`. A failed `Panel.qml` load leaves the bar button alive but with nothing to open.
+
+Helper tests (from a checkout):
+
+```bash
+python3 tests/test_ledger_io.py
+```
 
 ## Verify install
 

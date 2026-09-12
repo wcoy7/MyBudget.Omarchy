@@ -28,15 +28,37 @@ Item {
     property string versionLabel: "MyExpenses v0.1.4"
 
     readonly property string barLabel: Ledger.formatCents(Ledger.monthExpenseCents(state, year, month))
-    readonly property string dataDir: (Quickshell.env("HOME") || "") + "/.local/share/expenses"
-    readonly property string dataPath: dataDir + "/ledger.json"
-    readonly property string backupPath: dataPath + ".bak"
+    readonly property string homeDir: {
+        var h = Ledger.normalizePath(Quickshell.env("HOME") || "")
+        if (!h || h === "/" || h.charAt(0) !== "/")
+            return ""
+        return h
+    }
+    readonly property string dataDir: homeDir ? (homeDir + "/.local/share/expenses") : ""
+    readonly property string dataPath: dataDir ? (dataDir + "/ledger.json") : ""
+    readonly property string backupPath: dataPath ? (dataPath + ".bak") : ""
     readonly property alias content: body
+    readonly property int ledgerMaxBytes: 8 * 1024 * 1024
+    readonly property int qfxMaxBytes: 16 * 1024 * 1024
+    readonly property string ioPython: "/usr/bin/python3"
+    readonly property var helperEnv: ({
+        LC_ALL: "C",
+        PYTHONIOENCODING: "utf-8"
+    })
 
     // When true, we are showing an empty ledger because the on-disk file was
     // missing/corrupt. Never overwrite disk with that empty seed.
     property bool blockEmptyPersist: false
     property bool loadingBackup: false
+    property bool ioActive: false
+    property bool ioSawStart: false
+    property bool suppressWatch: false
+    property int watchHold: 0
+    property var ioQueue: []
+    property var ioJob: null
+    property string ioPendingStdin: ""
+
+    Component.onCompleted: reloadFromDisk()
 
     function acceptLoadedState(next, message) {
         state = next
@@ -53,35 +75,226 @@ Item {
         status = message
     }
 
-    function backupLedgerFile() {
-        Quickshell.execDetached([
-            "bash", "-lc",
-            'src="$1"; bak="$2"; mkdir -p "$(dirname "$src")"; if [ -f "$src" ] && [ -s "$src" ]; then cp -f "$src" "$bak"; fi',
-            "_", dataPath, backupPath
-        ])
+    function fileUrlToPath(url) {
+        var s = String(url || "")
+        if (s.indexOf("file://") === 0)
+            s = decodeURIComponent(s.slice(7))
+        return s
+    }
+
+    function utf8ByteLength(text) {
+        var s = String(text)
+        var n = 0
+        for (var i = 0; i < s.length; i++) {
+            var c = s.charCodeAt(i)
+            if (c <= 0x7f)
+                n += 1
+            else if (c <= 0x7ff)
+                n += 2
+            else if (c >= 0xd800 && c <= 0xdbff) {
+                n += 4
+                i += 1
+            } else {
+                n += 3
+            }
+        }
+        return n
+    }
+
+    function encodePayload(text) {
+        return utf8ByteLength(text) + "\n" + text
+    }
+
+    function helperCommand(args) {
+        var helper = fileUrlToPath(Qt.resolvedUrl("ledger_io.py"))
+        if (!helper || helper.charAt(0) !== "/" || helper.substring(helper.length - 13) !== "/ledger_io.py")
+            return []
+        return [ioPython, "-I", "-B", helper].concat(args)
+    }
+
+    function readCommand(path, maxBytes) {
+        return helperCommand(["read", "--path", path, "--max-bytes", String(maxBytes)])
+    }
+
+    function writeCommand(path, maxBytes) {
+        return helperCommand(["write", "--path", path, "--max-bytes", String(maxBytes)])
+    }
+
+    function saveCommand(path, backup, maxBytes) {
+        return helperCommand(["save", "--path", path, "--backup", backup, "--max-bytes", String(maxBytes)])
+    }
+
+    function ioMessage(code, stderrText) {
+        var msg = String(stderrText || "").trim()
+        if (msg)
+            return msg
+        if (code === 2)
+            return "file not found"
+        if (code === 3)
+            return "file exceeds size limit"
+        if (code === 4)
+            return "file is not a regular file"
+        if (code === 5)
+            return "file failed ownership checks"
+        if (code === 6)
+            return "invalid path"
+        return "I/O failed"
+    }
+
+    function enqueueIo(job) {
+        var q = ioQueue.slice()
+        q.push(job)
+        ioQueue = q
+        pumpIo()
+    }
+
+    function holdWatch() {
+        watchHold += 1
+        suppressWatch = true
+    }
+
+    function releaseWatch() {
+        watchHold -= 1
+        if (watchHold > 0)
+            return
+        watchHold = 0
+        Qt.callLater(function () {
+            if (root.watchHold === 0)
+                root.suppressWatch = false
+        })
+    }
+
+    function pumpIo() {
+        if (ioActive || ioQueue.length === 0)
+            return
+        var q = ioQueue.slice()
+        var job = q.shift()
+        ioQueue = q
+        if (!job || !job.command || job.command.length < 4) {
+            handleIo(job, 1, "", "I/O helper is not available")
+            pumpIo()
+            return
+        }
+        ioActive = true
+        ioSawStart = false
+        ioJob = job
+        ioPendingStdin = job.stdin || ""
+        ioProc.stdinEnabled = ioPendingStdin !== ""
+        ioProc.exec({
+            command: job.command,
+            clearEnvironment: true,
+            environment: helperEnv,
+            workingDirectory: "/"
+        })
+    }
+
+    function finishIo(code, stdoutText, stderrText) {
+        var job = ioJob
+        ioActive = false
+        ioJob = null
+        ioPendingStdin = ""
+        handleIo(job, code, stdoutText, stderrText)
+        pumpIo()
+    }
+
+    function handleIo(job, code, stdoutText, stderrText) {
+        if (!job)
+            return
+        if (job.kind === "load-ledger") {
+            if (code !== 0) {
+                tryLoadBackup((code === 2 ? "No ledger file" : ioMessage(code, stderrText)) + ".")
+                return
+            }
+            var loaded = Ledger.loadStrict(stdoutText)
+            if (!loaded.ok) {
+                tryLoadBackup(loaded.error + ".")
+                return
+            }
+            acceptLoadedState(loaded.state, "")
+            return
+        }
+        if (job.kind === "load-backup") {
+            loadingBackup = false
+            if (code !== 0) {
+                seedEmptyInMemory("Ledger missing/damaged and no backup found. Showing empty until you save an entry.")
+                return
+            }
+            var bak = Ledger.loadStrict(stdoutText)
+            if (bak.ok && !Ledger.isEffectivelyEmpty(bak.state)) {
+                acceptLoadedState(bak.state, "Restored from ledger.json.bak")
+                holdWatch()
+                enqueueIo({
+                    kind: "restore-write",
+                    command: writeCommand(dataPath, ledgerMaxBytes),
+                    stdin: encodePayload(Ledger.dump(state))
+                })
+                return
+            }
+            seedEmptyInMemory("Ledger missing/damaged and backup unavailable. Showing empty until you save an entry.")
+            return
+        }
+        if (job.kind === "save" || job.kind === "restore-write") {
+            releaseWatch()
+            if (code !== 0) {
+                status = (job.kind === "save" ? "Could not save ledger: " : "Restored in memory but could not rewrite ledger: ")
+                        + ioMessage(code, stderrText)
+            }
+            return
+        }
+        if (job.kind === "read-qfx") {
+            if (code !== 0) {
+                importLog = "Could not read file: " + ioMessage(code, stderrText)
+                return
+            }
+            var imported = Ledger.importTxns(state, Qfx.parse(stdoutText))
+            applyState(imported.state, "Imported " + imported.added)
+            importLog = imported.lines.join("\n")
+        }
     }
 
     function persist() {
+        if (!dataPath) {
+            status = "HOME is unset; cannot save ledger."
+            return false
+        }
         if (blockEmptyPersist && Ledger.isEffectivelyEmpty(state)) {
             status = "Not saving empty ledger over a missing/damaged file. Add an entry first."
             return false
         }
-        Quickshell.execDetached(["mkdir", "-p", dataDir])
-        backupLedgerFile()
-        ledgerFile.setText(Ledger.dump(state))
+        holdWatch()
+        enqueueIo({
+            kind: "save",
+            command: saveCommand(dataPath, backupPath, ledgerMaxBytes),
+            stdin: encodePayload(Ledger.dump(state))
+        })
         blockEmptyPersist = false
         return true
     }
 
     function reloadFromDisk() {
         loadingBackup = false
-        ledgerFile.reload()
+        if (!dataPath) {
+            seedEmptyInMemory("HOME is unset. Showing empty ledger.")
+            return
+        }
+        enqueueIo({
+            kind: "load-ledger",
+            command: readCommand(dataPath, ledgerMaxBytes)
+        })
     }
 
     function tryLoadBackup(reason) {
         loadingBackup = true
         status = reason + " Trying backup…"
-        backupFile.reload()
+        if (!backupPath) {
+            loadingBackup = false
+            seedEmptyInMemory("Ledger missing/damaged and no backup found. Showing empty until you save an entry.")
+            return
+        }
+        enqueueIo({
+            kind: "load-backup",
+            command: readCommand(backupPath, ledgerMaxBytes)
+        })
     }
 
     function applyState(next, message) {
@@ -92,64 +305,42 @@ Item {
             status = message
     }
 
+    Process {
+        id: ioProc
+        clearEnvironment: true
+        environment: root.helperEnv
+        workingDirectory: "/"
+        stdinEnabled: false
+        stdout: StdioCollector { id: ioStdout }
+        stderr: StdioCollector { id: ioStderr }
+        onStarted: {
+            root.ioSawStart = true
+            if (root.ioPendingStdin !== "") {
+                write(root.ioPendingStdin)
+                stdinEnabled = false
+            }
+        }
+        onExited: function (exitCode, exitStatus) {
+            if (!root.ioActive)
+                return
+            root.finishIo(exitCode, ioStdout.text, ioStderr.text)
+        }
+        onRunningChanged: {
+            if (!running && root.ioActive && !root.ioSawStart)
+                root.finishIo(1, "", "helper failed to start")
+        }
+    }
+
     FileView {
-        id: ledgerFile
+        id: ledgerWatch
         path: root.dataPath
+        preload: false
         watchChanges: true
-        atomicWrites: true
         printErrors: false
-        onLoaded: {
-            var result = Ledger.loadStrict(text())
-            if (!result.ok) {
-                root.tryLoadBackup(result.error + ".")
-                return
-            }
-            root.acceptLoadedState(result.state, "")
-        }
-        onLoadFailed: {
-            root.tryLoadBackup("No ledger file.")
-        }
         onFileChanged: {
-            if (!root.loadingBackup)
-                reload()
-        }
-    }
-
-    FileView {
-        id: backupFile
-        path: root.backupPath
-        watchChanges: false
-        atomicWrites: true
-        printErrors: false
-        onLoaded: {
-            root.loadingBackup = false
-            var result = Ledger.loadStrict(text())
-            if (result.ok && !Ledger.isEffectivelyEmpty(result.state)) {
-                root.acceptLoadedState(result.state, "Restored from ledger.json.bak")
-                Quickshell.execDetached(["mkdir", "-p", root.dataDir])
-                ledgerFile.setText(Ledger.dump(root.state))
+            if (root.suppressWatch || root.ioActive || root.loadingBackup)
                 return
-            }
-            root.seedEmptyInMemory("Ledger missing/damaged and backup unavailable. Showing empty until you save an entry.")
-        }
-        onLoadFailed: {
-            root.loadingBackup = false
-            root.seedEmptyInMemory("Ledger missing/damaged and no backup found. Showing empty until you save an entry.")
-        }
-    }
-
-    FileView {
-        id: qfxFile
-        path: ""
-        printErrors: false
-        onLoaded: {
-            var txns = Qfx.parse(text())
-            var result = Ledger.importTxns(root.state, txns)
-            root.applyState(result.state, "Imported " + result.added)
-            root.importLog = result.lines.join("\n")
-        }
-        onLoadFailed: function (error) {
-            root.importLog = "Could not read file: " + error
+            root.reloadFromDisk()
         }
     }
 
@@ -392,8 +583,15 @@ Item {
             Button {
                 text: "Import QFX"
                 onClicked: {
-                    qfxFile.path = root.importPath
-                    qfxFile.reload()
+                    var allowed = Ledger.isAllowedImportPath(root.importPath, root.homeDir)
+                    if (!allowed.ok) {
+                        root.importLog = allowed.reason
+                        return
+                    }
+                    root.enqueueIo({
+                        kind: "read-qfx",
+                        command: root.readCommand(allowed.path, root.qfxMaxBytes)
+                    })
                 }
             }
             Text {
