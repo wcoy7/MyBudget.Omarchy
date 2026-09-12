@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=MyExpenses
+GenericName=Expense Tracker
+Comment=Local expense tracker for Omarchy
+Exec=omarchy-shell shell toggle mybudget.expenses '{}'
+Icon=accessories-calculator
+Terminal=false
+Categories=Office;Finance;
+Keywords=expenses;budget;ledger;qfx;mybudget;
+StartupNotify=false
