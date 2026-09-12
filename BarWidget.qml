@@ -12,34 +12,10 @@ BarWidget {
     readonly property bool popoutSwitchClosing: panelLoader.item ? panelLoader.item.popoutSwitchClosing === true : false
     readonly property string spendLabel: {
         if (loadError)
-            return "MyExpenses!"
+            return "Expenses!"
         if (panelLoader.item)
             return panelLoader.item.barLabel
-        return "MyExpenses"
-    }
-
-    function open() {
-        if (panelLoader.item)
-            panelLoader.item.open()
-        else if (loadError)
-            console.log("MyExpenses panel failed to load:", loadError)
-    }
-
-    function close() {
-        if (panelLoader.item)
-            panelLoader.item.close()
-    }
-
-    function toggle() {
-        if (panelLoader.item)
-            panelLoader.item.toggle()
-        else if (loadError)
-            console.log("MyExpenses panel failed to load:", loadError)
-    }
-
-    function closeForPopoutSwitch() {
-        if (panelLoader.item)
-            panelLoader.item.closeForPopoutSwitch()
+        return "Expenses"
     }
 
     function injectPanel() {
@@ -50,6 +26,38 @@ BarWidget {
         panelLoader.item.hostWidget = root
     }
 
+    function open() {
+        injectPanel()
+        if (!panelLoader.item) {
+            console.warn("MyExpenses: Panel.qml not loaded (status=" + panelLoader.status + " error=" + loadError + ")")
+            // Retry once in case the first load raced the bar.
+            if (panelLoader.status === Loader.Error || panelLoader.status === Loader.Null) {
+                panelLoader.active = false
+                panelLoader.active = true
+            }
+            return
+        }
+        panelLoader.item.open()
+    }
+
+    function close() {
+        if (panelLoader.item)
+            panelLoader.item.close()
+    }
+
+    function toggle() {
+        if (!panelLoader.item) {
+            open()
+            return
+        }
+        panelLoader.item.toggle()
+    }
+
+    function closeForPopoutSwitch() {
+        if (panelLoader.item)
+            panelLoader.item.closeForPopoutSwitch()
+    }
+
     implicitWidth: button.implicitWidth
     implicitHeight: button.implicitHeight
 
@@ -58,6 +66,7 @@ BarWidget {
     Loader {
         id: panelLoader
         active: true
+        asynchronous: false
         source: Qt.resolvedUrl("Panel.qml")
         visible: false
         onLoaded: {
@@ -66,10 +75,12 @@ BarWidget {
             Qt.callLater(root.injectPanel)
         }
         onStatusChanged: {
-            if (status === Loader.Error)
-                root.loadError = (sourceComponent && sourceComponent.errorString) ? sourceComponent.errorString() : "Panel.qml failed to load"
-            else if (status === Loader.Ready)
+            if (status === Loader.Error) {
+                root.loadError = "Panel.qml failed to load"
+                console.warn("MyExpenses: Panel.qml Loader.Error")
+            } else if (status === Loader.Ready) {
                 root.loadError = ""
+            }
         }
     }
 
@@ -78,7 +89,9 @@ BarWidget {
         anchors.fill: parent
         bar: root.bar
         text: root.spendLabel
-        tooltipText: root.loadError ? ("MyExpenses error: " + root.loadError) : "Open MyExpenses"
+        tooltipText: root.loadError !== ""
+            ? ("MyExpenses error: " + root.loadError)
+            : "Open MyExpenses 0.1.2"
         onPressed: function (buttonCode) {
             if (buttonCode === Qt.LeftButton)
                 root.toggle()

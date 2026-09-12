@@ -104,7 +104,21 @@ qs log -p "$OMARCHY_PATH/shell" --tail 80
 
 A failed `Panel.qml` load leaves the bar button alive but with nothing to open. Update the plugin, then `omarchy-shell shell rescanPlugins`.
 
+## Verify install
+
+After updating, the bar tooltip should say **Open MyExpenses 0.1.2**. If it still says an older tip, the plugin did not refresh:
+
+```bash
+omarchy plugin update mybudget.expenses
+omarchy-shell shell rescanPlugins
+# or force:
+rm -rf ~/.config/omarchy/plugins/mybudget.expenses
+omarchy plugin add https://github.com/wcoy7/MyBudget.Omarchy.git --enable
+omarchy bar put mybudget.expenses --section right
+```
+
 ## Troubleshooting
+
 
 ```bash
 uname -m

@@ -32,6 +32,7 @@ Panel {
     readonly property string dataDir: (Quickshell.env("HOME") || "") + "/.local/share/expenses"
     readonly property string dataPath: dataDir + "/ledger.json"
     readonly property string backupPath: dataPath + ".bak"
+    readonly property bool anchorsReady: anchorItem !== null && bar !== null
 
     // When true, we are showing an empty ledger because the on-disk file was
     // missing/corrupt. Never overwrite disk with that empty seed.
@@ -39,8 +40,12 @@ Panel {
     property bool loadingBackup: false
 
     function open() {
+        // Show first so a slow disk read cannot leave the user with nothing.
         root.controller.show()
-        reloadFromDisk()
+        console.info("MyExpenses: open anchorsReady=" + anchorsReady
+                     + " bar=" + !!root.bar
+                     + " anchor=" + !!root.anchorItem)
+        Qt.callLater(reloadFromDisk)
     }
 
     function close() {
@@ -76,7 +81,6 @@ Panel {
     }
 
     function backupLedgerFile() {
-        // Copy existing ledger aside before replacing it. No-op if missing.
         Quickshell.execDetached([
             "bash", "-lc",
             'src="$1"; bak="$2"; mkdir -p "$(dirname "$src")"; if [ -f "$src" ] && [ -s "$src" ]; then cp -f "$src" "$bak"; fi',
@@ -124,14 +128,12 @@ Panel {
         onLoaded: {
             var result = Ledger.loadStrict(text())
             if (!result.ok) {
-                // Corrupt JSON must never be overwritten with an empty seed.
                 root.tryLoadBackup(result.error + ".")
                 return
             }
             root.acceptLoadedState(result.state, "")
         }
         onLoadFailed: {
-            // Missing file: empty in memory only. Do not create/overwrite on disk.
             root.tryLoadBackup("No ledger file.")
         }
         onFileChanged: {
@@ -151,7 +153,6 @@ Panel {
             var result = Ledger.loadStrict(text())
             if (result.ok && !Ledger.isEffectivelyEmpty(result.state)) {
                 root.acceptLoadedState(result.state, "Restored from ledger.json.bak")
-                // Rewrite primary from the good backup without clobbering .bak first.
                 Quickshell.execDetached(["mkdir", "-p", root.dataDir])
                 ledgerFile.setText(Ledger.dump(root.state))
                 return
@@ -164,111 +165,125 @@ Panel {
         }
     }
 
-    KeyboardPanel {
-        id: panel
-        anchorItem: root.anchorItem
-        owner: root.hostWidget || root
-        bar: root.bar
-        open: root.opened
-        focusTarget: keyCatcher
-        contentWidth: panel.fittedContentWidth(Style.space(760))
-        contentHeight: panel.fittedContentHeight(Style.space(560))
+    // Create the popup only after the bar injects anchor + bar. Building
+    // KeyboardPanel with null required anchors can leave a window that never
+    // maps, while shell summon still returns ok.
+    Loader {
+        id: popupLoader
+        active: root.anchorsReady
+        asynchronous: false
+        sourceComponent: keyboardPanelComponent
+    }
 
-        PanelKeyCatcher {
-            id: keyCatcher
-            anchors.fill: parent
-            onCloseRequested: root.close()
-            onTabRequested: function (direction) { root.switchPanel(direction) }
+    Component {
+        id: keyboardPanelComponent
+        KeyboardPanel {
+            id: panel
+            anchorItem: root.anchorItem
+            owner: root.hostWidget || root
+            bar: root.bar
+            open: root.opened
+            centerOnBar: false
+            focusTarget: keyCatcher
+            contentWidth: panel.fittedContentWidth(Style.space(760))
+            contentHeight: panel.fittedContentHeight(Math.max(content.implicitHeight, Style.space(420)))
 
-            Column {
-                id: content
-                width: parent.width
-                spacing: Style.space(8)
+            PanelKeyCatcher {
+                id: keyCatcher
+                anchors.fill: parent
+                onCloseRequested: root.close()
+                onTabRequested: function (direction) { root.switchPanel(direction) }
 
-                Row {
-                    spacing: Style.space(8)
-                    Button {
-                        text: "‹"
-                        onClicked: {
-                            var n = Ledger.addMonths(root.year, root.month, -1)
-                            root.year = n.year
-                            root.month = n.month
-                        }
-                    }
-                    Text {
-                        text: Ledger.monthLabel(root.year, root.month)
-                        color: root.barForeground
-                        font.pixelSize: Style.font.subtitle
-                        font.bold: true
-                        anchors.verticalCenter: parent.verticalCenter
-                    }
-                    Button {
-                        text: "›"
-                        onClicked: {
-                            var n = Ledger.addMonths(root.year, root.month, 1)
-                            root.year = n.year
-                            root.month = n.month
-                        }
-                    }
-                    Text {
-                        text: root.status
-                        color: root.barForeground
-                        opacity: 0.7
-                        font.pixelSize: Style.font.bodySmall
-                        anchors.verticalCenter: parent.verticalCenter
-                    }
-                }
-
-                Row {
-                    spacing: Style.space(6)
-                    Repeater {
-                        model: [
-                            { id: "summary", label: "Summary" },
-                            { id: "register", label: "Register" },
-                            { id: "add", label: "Add" },
-                            { id: "import", label: "Import" },
-                            { id: "budget", label: "Budget" },
-                            { id: "settings", label: "Settings" }
-                        ]
-                        Button {
-                            text: modelData.label
-                            selected: root.page === modelData.id
-                            onClicked: root.page = modelData.id
-                        }
-                    }
-                }
-
-                Row {
-                    spacing: Style.space(16)
-                    Text {
-                        text: "Spent  " + Ledger.formatCents(Ledger.monthExpenseCents(root.state, root.year, root.month))
-                        color: root.barForeground
-                    }
-                    Text {
-                        text: "Income  " + Ledger.formatCents(Ledger.monthIncomeCents(root.state, root.year, root.month))
-                        color: root.barForeground
-                    }
-                    Text {
-                        text: "Budget  " + Ledger.formatCents(Ledger.monthBudgetCents(root.state, root.year, root.month))
-                        color: root.barForeground
-                    }
-                }
-
-                Loader {
+                Column {
+                    id: content
                     width: parent.width
-                    height: Style.space(420)
-                    sourceComponent: {
-                        if (root.page === "register")
-                            return registerPage
-                        if (root.page === "add")
-                            return addPage
-                        if (root.page === "import")
-                            return importPage
-                        if (root.page === "budget")
-                            return budgetPage
-                        if (root.page === "settings")
-                            return settingsPage
-                        return summaryPage
+                    spacing: Style.space(8)
+
+                    Row {
+                        spacing: Style.space(8)
+                        Button {
+                            text: "‹"
+                            onClicked: {
+                                var n = Ledger.addMonths(root.year, root.month, -1)
+                                root.year = n.year
+                                root.month = n.month
+                            }
+                        }
+                        Text {
+                            text: Ledger.monthLabel(root.year, root.month)
+                            color: root.barForeground
+                            font.pixelSize: Style.font.subtitle
+                            font.bold: true
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                        Button {
+                            text: "›"
+                            onClicked: {
+                                var n = Ledger.addMonths(root.year, root.month, 1)
+                                root.year = n.year
+                                root.month = n.month
+                            }
+                        }
+                        Text {
+                            text: root.status
+                            color: root.barForeground
+                            opacity: 0.7
+                            font.pixelSize: Style.font.bodySmall
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                    }
+
+                    Row {
+                        spacing: Style.space(6)
+                        Repeater {
+                            model: [
+                                { id: "summary", label: "Summary" },
+                                { id: "register", label: "Register" },
+                                { id: "add", label: "Add" },
+                                { id: "import", label: "Import" },
+                                { id: "budget", label: "Budget" },
+                                { id: "settings", label: "Settings" }
+                            ]
+                            Button {
+                                text: modelData.label
+                                selected: root.page === modelData.id
+                                onClicked: root.page = modelData.id
+                            }
+                        }
+                    }
+
+                    Row {
+                        spacing: Style.space(16)
+                        Text {
+                            text: "Spent  " + Ledger.formatCents(Ledger.monthExpenseCents(root.state, root.year, root.month))
+                            color: root.barForeground
+                        }
+                        Text {
+                            text: "Income  " + Ledger.formatCents(Ledger.monthIncomeCents(root.state, root.year, root.month))
+                            color: root.barForeground
+                        }
+                        Text {
+                            text: "Budget  " + Ledger.formatCents(Ledger.monthBudgetCents(root.state, root.year, root.month))
+                            color: root.barForeground
+                        }
+                    }
+
+                    Loader {
+                        width: parent.width
+                        height: Style.space(420)
+                        sourceComponent: {
+                            if (root.page === "register")
+                                return registerPage
+                            if (root.page === "add")
+                                return addPage
+                            if (root.page === "import")
+                                return importPage
+                            if (root.page === "budget")
+                                return budgetPage
+                            if (root.page === "settings")
+                                return settingsPage
+                            return summaryPage
+                        }
                     }
                 }
             }
@@ -357,12 +372,19 @@ Panel {
                 Button { text: "Expense"; selected: root.formKind === "expense"; onClicked: root.formKind = "expense" }
                 Button { text: "Income"; selected: root.formKind === "income"; onClicked: root.formKind = "income" }
             }
-            Dropdown {
+            // Simple category buttons avoid Dropdown popup stacking issues
+            // inside KeyboardPanel on some Omarchy builds.
+            Flow {
                 width: parent.width
-                label: "Category"
-                value: root.formCategory
-                options: root.state.categories.map(function (c) { return { value: c.id, label: c.name } })
-                onChanged: function (value) { root.formCategory = value }
+                spacing: Style.space(6)
+                Repeater {
+                    model: root.state.categories
+                    Button {
+                        text: modelData.name
+                        selected: root.formCategory === modelData.id
+                        onClicked: root.formCategory = modelData.id
+                    }
+                }
             }
             TextField { placeholderText: "Note"; text: root.formNote; onTextChanged: root.formNote = text }
             Button {
