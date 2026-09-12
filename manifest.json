@@ -2,15 +2,18 @@
   "schemaVersion": 1,
   "id": "mybudget.expenses",
   "name": "MyExpenses",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "author": "Warren Coykendall",
   "license": "MIT",
   "description": "Standalone local expense tracker for Omarchy: register, paychecks, budgets, and QFX import.",
   "kinds": [
-    "bar-widget"
+    "bar-widget",
+    "overlay"
   ],
+  "keepLoaded": true,
   "entryPoints": {
-    "barWidget": "BarWidget.qml"
+    "barWidget": "BarWidget.qml",
+    "overlay": "Overlay.qml"
   },
   "barWidget": {
     "displayName": "MyExpenses",

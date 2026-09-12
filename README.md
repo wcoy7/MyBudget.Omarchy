@@ -1,6 +1,6 @@
 # MyExpenses
 
-Standalone personal expense tracker for [Omarchy](https://omarchy.org). Local-only register, paychecks, categories, budgets, and QFX import from the Omarchy bar.
+Standalone personal expense tracker for [Omarchy](https://omarchy.org). Local-only register, paychecks, categories, budgets, and QFX import.
 
 Plugin id: `mybudget.expenses`
 
@@ -33,19 +33,36 @@ cp -R MyBudget.Omarchy ~/.config/omarchy/plugins/mybudget.expenses
 omarchy plugin validate ~/.config/omarchy/plugins/mybudget.expenses
 omarchy-shell shell rescanPlugins
 # fully restart if the panel still fails to open:
-# omarchy-shell shell restart
+# omarchy restart shell
 omarchy plugin enable mybudget.expenses
 omarchy bar put mybudget.expenses --section right
 ```
 
 The plugin directory name must match the id: `mybudget.expenses`.
 
+### App menu (Walker) + fullscreen
+
+The plugin is both a **bar widget** and a **fullscreen overlay**. After install, add the desktop entry so Walker can launch it:
+
+```bash
+mkdir -p ~/.local/share/applications
+cp ~/.config/omarchy/plugins/mybudget.expenses/mybudget-expenses.desktop \
+  ~/.local/share/applications/
+# or from a checkout:
+# cp ./mybudget-expenses.desktop ~/.local/share/applications/
+```
+
+Then search for **MyExpenses** in Walker. That toggles the fullscreen overlay.
+
 ## Use
 
-- Click **MyExpenses** on the bar to open the panel
-- Press Escape to close
-- Summon: `omarchy-shell shell summon mybudget.expenses '{}'`
-- Hide: `omarchy-shell shell hide mybudget.expenses`
+- Click **MyExpenses** on the bar → anchored panel
+- Walker / app menu → fullscreen overlay
+- Escape (or Close) dismisses the open surface
+- Toggle overlay: `omarchy-shell shell toggle mybudget.expenses '{}'`
+- Hide overlay: `omarchy-shell shell hide mybudget.expenses`
+
+Note: with both kinds declared, shell `summon` / `toggle` on this id opens the **overlay**, not the bar panel. The bar chip still opens the panel directly.
 
 Ledger files:
 
@@ -67,13 +84,18 @@ Or, in a git checkout under `~/.config/omarchy/plugins/mybudget.expenses`:
 ```bash
 git pull
 omarchy-shell shell rescanPlugins
+# if UI still looks stale:
+omarchy restart shell
 ```
+
+Re-copy the desktop file after updates if you installed it manually.
 
 ## Remove
 
 ```bash
 omarchy plugin disable mybudget.expenses
 omarchy plugin remove mybudget.expenses
+rm -f ~/.local/share/applications/mybudget-expenses.desktop
 ```
 
 ## Features
@@ -84,49 +106,48 @@ omarchy plugin remove mybudget.expenses
 - Category budgets
 - QFX / OFX import
 - Local JSON storage (no cloud, no account)
+- Bar panel and fullscreen overlay
 
 ## Layout
 
 ```
-manifest.json     Plugin contract
-BarWidget.qml     Bar entry
-Panel.qml         Main UI
-Ledger.js         Totals and persistence helpers
-Qfx.js            QFX/OFX parser
-fixtures/         Sample import file
+manifest.json              Plugin contract (bar-widget + overlay)
+BarWidget.qml              Bar entry
+Panel.qml                  Anchored bar panel chrome
+Overlay.qml                Fullscreen overlay chrome
+ExpensesApp.qml            Shared ledger UI
+Ledger.js                  Totals and persistence helpers
+Qfx.js                     QFX/OFX parser
+mybudget-expenses.desktop  Walker / app menu launcher
+fixtures/                  Sample import file
 ```
-
 
 If the bar label appears but clicking only shows a tiny menu/tooltip and no panel:
 
 ```bash
-omarchy-shell shell summon mybudget.expenses '{}'
+omarchy restart shell
 qs log -p "$OMARCHY_PATH/shell" --tail 80
 ```
 
-A failed `Panel.qml` load leaves the bar button alive but with nothing to open. Update the plugin, then `omarchy-shell shell rescanPlugins`.
+Look for `MyExpenses 0.1.4 panel ready`. A failed `Panel.qml` load leaves the bar button alive but with nothing to open.
 
 ## Verify install
 
-After updating, the bar tooltip should say **Open MyExpenses 0.1.2**. If it still says an older tip, the plugin did not refresh:
+After updating, the bar tooltip should say **Open MyExpenses 0.1.4**. If it still says an older tip:
 
 ```bash
 omarchy plugin update mybudget.expenses
-omarchy-shell shell rescanPlugins
-# or force:
-rm -rf ~/.config/omarchy/plugins/mybudget.expenses
-omarchy plugin add https://github.com/wcoy7/MyBudget.Omarchy.git --enable
-omarchy bar put mybudget.expenses --section right
+omarchy restart shell
 ```
 
 ## Troubleshooting
-
 
 ```bash
 uname -m
 omarchy plugin list
 omarchy plugin validate ~/.config/omarchy/plugins/mybudget.expenses
+omarchy-shell shell toggle mybudget.expenses '{}'
 qs log -p "$OMARCHY_PATH/shell" --tail 80
 ```
 
-Edits under `~/.config/omarchy/plugins/mybudget.expenses/` reload automatically.
+Edits under `~/.config/omarchy/plugins/mybudget.expenses/` reload with `rescanPlugins`; prefer a full shell restart after structural changes (new overlay entry).
