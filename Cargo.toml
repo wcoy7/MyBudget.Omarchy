@@ -1,0 +1,13 @@
+[package]
+name = "mybudget"
+version = "0.1.4"
+edition = "2024"
+license = "MIT"
+description = "Local expense tracker"
+publish = false
+
+[dependencies]
+libc = "0.2"
+rune = { git = "https://github.com/anomalyco/rune", rev = "a7f276c3630f85a06a0230295da4d2bd172d8d3b" }
+rune-kit = { git = "https://github.com/anomalyco/rune", rev = "a7f276c3630f85a06a0230295da4d2bd172d8d3b" }
+serde_json = { version = "1", features = ["preserve_order"] }
