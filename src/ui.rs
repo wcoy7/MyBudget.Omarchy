@@ -13,7 +13,7 @@ use mybudget::ledger::{
 use mybudget::qfx;
 use mybudget::store::{self, QFX_MAX, Session, Storage};
 use rune::tok::{self, type_};
-use rune::{AppSpec, Cx, El, ScrollSpec, TextEdit, Tx, col, row, text};
+use rune::{AppSpec, Cx, El, ScrollSpec, TextEdit, Tx, col, el, row, text};
 use rune_kit::{Button, ButtonVariant, Kit, TextInput};
 
 const VERSION_LABEL: &str = "MyExpenses v0.1.4";
@@ -118,8 +118,8 @@ pub fn run() {
     rune::run(AppSpec {
         scenes: &[("sample", scene_sample)],
         poll: Some(poll),
-        min_size: Some((720.0, 560.0)),
-        ..AppSpec::new("MyExpenses", (960.0, 720.0), load, view)
+        min_size: Some((960.0, 640.0)),
+        ..AppSpec::new("MyExpenses", (1080.0, 760.0), load, view)
     });
 }
 
@@ -286,25 +286,25 @@ fn view(state: &State, cx: &mut Cx<State>) -> El {
     let screen = col()
         .w_full()
         .h_full()
-        .padding(20.0)
-        .gap(10.0)
         .fill(t.bg)
-        .child(header(state, &k, &t))
-        .child(nav(state, &k))
+        .child(top_bar(state, &k, &t))
         .child(
-            text(VERSION_LABEL)
-                .key("version")
-                .font(type_::LABEL)
-                .color(t.text_secondary),
-        )
-        .child(totals(state, &t))
-        .child(
-            body.scroll(ScrollSpec {
-                stick_bottom: false,
-            })
-            .grow(1.0)
-            .min_h(0.0)
-            .w_full(),
+            row()
+                .w_full()
+                .grow(1.0)
+                .min_h(0.0)
+                .child(side_nav(state, &k, &t))
+                .child(el().w(1.0).h_full().fill(t.separator))
+                .child(
+                    body.scroll(ScrollSpec {
+                        stick_bottom: false,
+                    })
+                    .grow(1.0)
+                    .min_w(0.0)
+                    .min_h(0.0)
+                    .h_full()
+                    .padding(20.0),
+                ),
         );
     rune_kit::root(screen, Vec::<El>::new()).on_window_focus(|state: &mut State, focused, _| {
         if focused {
@@ -317,60 +317,90 @@ fn view(state: &State, cx: &mut Cx<State>) -> El {
     })
 }
 
-fn header(state: &State, k: &Kit, t: &rune::tok::Theme) -> El {
-    row()
-        .gap(8.0)
-        .center_y()
+const PAGES: [(Page, &str, &str); 6] = [
+    (Page::Summary, "Summary", "page-summary"),
+    (Page::Register, "Register", "page-register"),
+    (Page::Add, "Add", "page-add"),
+    (Page::Import, "Import", "page-import"),
+    (Page::Budget, "Budget", "page-budget"),
+    (Page::Settings, "Settings", "page-settings"),
+];
+
+fn top_bar(state: &State, k: &Kit, t: &rune::tok::Theme) -> El {
+    col()
+        .key("top-nav")
         .w_full()
-        .child(button(
-            "‹",
-            ButtonVariant::Ghost,
-            k,
-            "month-prev",
-            |state| shift_month(state, -1),
-        ))
+        .fill(t.card)
         .child(
-            text(month_label(state.year, state.month))
-                .key("month-label")
-                .font(type_::TITLE)
-                .color(t.text),
+            row()
+                .w_full()
+                .h(64.0)
+                .px(16.0)
+                .gap(16.0)
+                .center_y()
+                .child(
+                    col()
+                        .gap(0.0)
+                        .child(text("MyExpenses").font(type_::TITLE).color(t.text))
+                        .child(
+                            text(VERSION_LABEL)
+                                .key("version")
+                                .font(type_::LABEL)
+                                .color(t.text_secondary),
+                        ),
+                )
+                .child(button(
+                    "‹",
+                    ButtonVariant::Ghost,
+                    k,
+                    "month-prev",
+                    |state| shift_month(state, -1),
+                ))
+                .child(
+                    text(month_label(state.year, state.month))
+                        .key("month-label")
+                        .font(type_::TITLE)
+                        .color(t.text),
+                )
+                .child(button(
+                    "›",
+                    ButtonVariant::Ghost,
+                    k,
+                    "month-next",
+                    |state| shift_month(state, 1),
+                ))
+                .child(
+                    text(state.session.status.clone())
+                        .key("status")
+                        .font(type_::LABEL)
+                        .color(t.text_secondary)
+                        .grow(1.0)
+                        .min_w(0.0)
+                        .truncate()
+                        .max_lines(1),
+                )
+                .child(totals(state, t)),
         )
-        .child(button(
-            "›",
-            ButtonVariant::Ghost,
-            k,
-            "month-next",
-            |state| shift_month(state, 1),
-        ))
-        .child(
-            text(state.session.status.clone())
-                .key("status")
-                .font(type_::LABEL)
-                .color(t.text_secondary)
-                .grow(1.0)
-                .min_w(0.0),
-        )
+        .child(el().h(1.0).w_full().fill(t.separator))
 }
 
-fn nav(state: &State, k: &Kit) -> El {
-    let pages = [
-        (Page::Summary, "Summary", "page-summary"),
-        (Page::Register, "Register", "page-register"),
-        (Page::Add, "Add", "page-add"),
-        (Page::Import, "Import", "page-import"),
-        (Page::Budget, "Budget", "page-budget"),
-        (Page::Settings, "Settings", "page-settings"),
-    ];
-    let mut strip = row().gap(6.0);
-    for (page, label, key) in pages {
+fn side_nav(state: &State, k: &Kit, t: &rune::tok::Theme) -> El {
+    let mut bar = col()
+        .key("side-nav")
+        .w(176.0)
+        .h_full()
+        .fill(t.card)
+        .padding(12.0)
+        .gap(6.0);
+    for (page, label, key) in PAGES {
         let variant = if state.page == page {
             ButtonVariant::Contrast
         } else {
             ButtonVariant::Ghost
         };
-        strip = strip.child(button(label, variant, k, key, move |state| go(state, page)));
+        bar = bar.child(button(label, variant, k, key, move |state| go(state, page)).w(152.0));
     }
-    strip
+    bar
 }
 
 fn totals(state: &State, t: &rune::tok::Theme) -> El {
@@ -794,6 +824,12 @@ mod tests {
 
         let mut rt = Runtime::new(state, view, (960.0, 720.0), Env::new(true, 1.0));
         rt.frame(0.0);
+        assert!(rt.find("top-nav").is_some());
+        assert!(rt.find("side-nav").is_some());
+        assert!(rt.find("spent").is_some());
+        assert!(rt.find("version").is_some());
+        click(&mut rt, "page-settings");
+        assert_eq!(rt.state.page, Page::Settings);
         click(&mut rt, "page-register");
         assert_eq!(rt.state.page, Page::Register);
         click(&mut rt, "delete-e1");
