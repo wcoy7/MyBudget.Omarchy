@@ -327,10 +327,13 @@ const PAGES: [(Page, &str, &str); 6] = [
 ];
 
 fn top_bar(state: &State, k: &Kit, t: &rune::tok::Theme) -> El {
+    // The card fills the titlebar band. The row starts below the macOS traffic lights
+    // (about 14 points from y = 6) so the title clears them by a small gap.
     col()
         .key("top-nav")
         .w_full()
         .fill(t.card)
+        .pt(12.0)
         .child(
             row()
                 .w_full()
